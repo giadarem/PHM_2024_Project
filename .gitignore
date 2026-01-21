@@ -1,5 +1,4 @@
 train_dataset*
-X_train*
-y_train*
 *.csv
 *.xlsx
+.venv/
