@@ -1,33 +1,68 @@
 import pandas as pd
+import numpy as np
+from typing import Sequence, Optional
 
-def load_dataset(path):
-    df = pd.read_csv(path)
-    return df
 
-def fit_scaler(df: pd.DataFrame, method: str = "standardize", eps: float = 1e-10):
-    """
-    method: 'normalize' oppure 'standardize'
-    Ritorna un dizionario con parametri.
-    """
-    if method == "normalize":
-        col_min = df.min()
-        col_range = (df.max() - col_min) + eps
-        return {"method": method, "min": col_min, "range": col_range}
-    elif method == "standardize":
-        mean = df.mean()
-        std = df.std() + eps
-        return {"method": method, "mean": mean, "std": std}
-    else:
-        raise ValueError("method must be 'normalize' or 'standardize'")
+def load_dataset(path: str) -> pd.DataFrame:
+    """Load raw dataset from CSV."""
+    return pd.read_csv(path)
 
-def apply_scaler(df: pd.DataFrame, scaler: dict):
-    """
-    Applica lo scaling in base ai parametri ritornati da fit_scaler().
-    """
-    if scaler["method"] == "normalize":
-        return (df - scaler["min"]) / scaler["range"]
-    elif scaler["method"] == "standardize":
-        return (df - scaler["mean"]) / scaler["std"]
-    else:
-        raise ValueError("Unknown scaler method")
 
+def create_trq_target(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Create torque target removing the effect of torque margin (%):
+    trq_target = trq_measured / (1 + trq_margin/100)
+    """
+    required = {"trq_measured", "trq_margin"}
+    missing = required - set(df.columns)
+    if missing:
+        raise KeyError(f"Missing columns for trq_target: {sorted(missing)}")
+
+    out = df.copy()
+    margin = pd.to_numeric(out["trq_margin"], errors="coerce")
+    measured = pd.to_numeric(out["trq_measured"], errors="coerce")
+
+    denom = 1 + (margin / 100.0)
+    out["trq_target"] = measured / denom
+    return out
+
+
+def create_np_ng_ratio(df: pd.DataFrame, drop_original: bool = True) -> pd.DataFrame:
+    """Create np/ng ratio with basic safety checks."""
+    required = {"np", "ng"}
+    missing = required - set(df.columns)
+    if missing:
+        raise KeyError(f"Missing columns for np_ng_ratio: {sorted(missing)}")
+
+    out = df.copy()
+    np_col = pd.to_numeric(out["np"], errors="coerce")
+    ng_col = pd.to_numeric(out["ng"], errors="coerce")
+
+    # Avoid division by zero
+    ng_col = ng_col.replace(0, np.nan)
+
+    out["np_ng_ratio"] = np_col / ng_col
+
+    if drop_original:
+        out = out.drop(["np", "ng"], axis=1)
+    return out
+
+
+def create_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Pipeline of feature engineering steps."""
+    out = create_trq_target(df)
+    out = create_np_ng_ratio(out, drop_original=True)
+    return out
+
+
+def drop_features(df: pd.DataFrame, drop_features: Optional[Sequence[str]] = None) -> pd.DataFrame:
+    """Drop selected columns safely."""
+    if not drop_features:
+        return df.copy()
+    return df.drop(list(drop_features), axis=1, errors="ignore").copy()
+
+
+def save_processed_dataset(df: pd.DataFrame, path: str, drop_cols: Optional[Sequence[str]] = None) -> None:
+    """Save processed dataset to CSV."""
+    out = drop_features(df, drop_cols)
+    out.to_csv(path, index=False)
