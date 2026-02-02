@@ -1,4 +1,5 @@
 train_dataset*
 *.csv
+*.pkl
 *.xlsx
 .venv/
