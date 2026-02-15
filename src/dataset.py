@@ -50,8 +50,8 @@ def create_np_ng_ratio(df: pd.DataFrame, drop_original: bool = True) -> pd.DataF
 
 def create_features(df: pd.DataFrame) -> pd.DataFrame:
     """Pipeline of feature engineering steps."""
-    out = create_trq_target(df)
-    out = create_np_ng_ratio(out, drop_original=True)
+    df = create_trq_target(df)
+    out=create_np_ng_ratio(df)
     return out
 
 

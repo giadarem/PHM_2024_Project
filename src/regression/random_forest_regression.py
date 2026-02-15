@@ -3,7 +3,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import KFold
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-class RandomForestModel:
+class RandomForestRegressorModel:
 
     def __init__(
         self,
@@ -12,6 +12,7 @@ class RandomForestModel:
         min_samples_leaf=1,
         max_features="sqrt",
         random_state=42,
+
         n_jobs=-1,
     ):
 
@@ -132,7 +133,7 @@ class RandomForestModel:
             X_tr, X_va = X[train_idx], X[val_idx]
             y_tr, y_va = y[train_idx], y[val_idx]
 
-            m = RandomForestModel(
+            m = RandomForestRegressorModel(
                 n_estimators=params["n_estimators"],
                 max_depth=params["max_depth"],
                 min_samples_leaf=params["min_samples_leaf"],
@@ -183,3 +184,139 @@ class RandomForestModel:
         """
         if not self.is_fitted:
             raise RuntimeError("Model must be fitted before prediction.")
+
+
+    def tune_n_estimators_cv(
+        self,
+        X,
+        y,
+        n_estimators_list=None,
+        n_splits=5,
+        shuffle=True,
+        random_state=42,
+        verbose=True
+    ):
+        """
+        Prova diversi n_estimators, fa CV per ciascuno e ritorna:
+        - results: lista di dict con metriche (mean±std)
+        - best: dict migliore (min RMSE_mean)
+        """
+        if n_estimators_list is None:
+            n_estimators_list = [300, 500, 750, 1000, 1250]
+
+        base_params = self.model.get_params()
+
+        results = []
+        best = None
+
+        for n in n_estimators_list:
+            m = RandomForestRegressorModel(
+                n_estimators=n,
+                max_depth=base_params["max_depth"],
+                min_samples_leaf=base_params["min_samples_leaf"],
+                max_features=base_params["max_features"],
+                random_state=base_params["random_state"],
+                n_jobs=base_params["n_jobs"],
+            )
+
+            _, summary = m.cross_validate(
+                X, y,
+                n_splits=n_splits,
+                shuffle=shuffle,
+                random_state=random_state,
+                verbose=False
+            )
+
+            row = {
+                "n_estimators": int(n),
+                **summary
+            }
+            results.append(row)
+
+            if verbose:
+                print(
+                    f"n={n:4d} | RMSE={row['RMSE_mean']:.6f} ± {row['RMSE_std']:.6f} "
+                    f"| MAE={row['MAE_mean']:.6f} | R2={row['R2_mean']:.6f}"
+                )
+
+            if (best is None) or (row["RMSE_mean"] < best["RMSE_mean"]):
+                best = row
+
+        if verbose and best is not None:
+            print("\n Best n_estimators (min RMSE_mean)")
+            print(
+                f"n={best['n_estimators']} | RMSE={best['RMSE_mean']:.6f} ± {best['RMSE_std']:.6f} "
+                f"| MAE={best['MAE_mean']:.6f} | R2={best['R2_mean']:.6f}"
+            )
+
+        return results, best
+
+    def tune_min_samples_leaf_cv(
+            self,
+            X,
+            y,
+            min_samples_list=None,
+            n_splits=5,
+            shuffle=True,
+            random_state=42,
+            verbose=True
+    ):
+        """
+        Cerca il miglior min_samples_leaf usando Cross Validation.
+
+        Ritorna:
+        - results: lista con metriche per ogni valore
+        - best: configurazione con RMSE minimo
+        """
+
+        if min_samples_list is None:
+            min_samples_list = [1, 2, 5, 10, 20, 30]
+
+        base_params = self.model.get_params()
+
+        results = []
+        best = None
+
+        for msl in min_samples_list:
+
+            model = RandomForestRegressorModel(
+                n_estimators=base_params["n_estimators"],  # fisso
+                max_depth=base_params["max_depth"],
+                min_samples_leaf=msl,
+                max_features=base_params["max_features"],
+                random_state=base_params["random_state"],
+                n_jobs=base_params["n_jobs"],
+            )
+
+            _, summary = model.cross_validate(
+                X, y,
+                n_splits=n_splits,
+                shuffle=shuffle,
+                random_state=random_state,
+                verbose=False
+            )
+
+            row = {
+                "min_samples_leaf": msl,
+                **summary
+            }
+            results.append(row)
+
+            if verbose:
+                print(
+                    f"leaf={msl:2d} | RMSE={row['RMSE_mean']:.6f} ± {row['RMSE_std']:.6f} "
+                    f"| MAE={row['MAE_mean']:.6f} | R2={row['R2_mean']:.6f}"
+                )
+
+            if (best is None) or (row["RMSE_mean"] < best["RMSE_mean"]):
+                best = row
+
+        if verbose:
+            print("\n✅ BEST min_samples_leaf")
+            print(
+                f"leaf={best['min_samples_leaf']} | "
+                f"RMSE={best['RMSE_mean']:.6f} ± {best['RMSE_std']:.6f} "
+                f"| MAE={best['MAE_mean']:.6f} | R2={best['R2_mean']:.6f}"
+            )
+
+        return results, best
